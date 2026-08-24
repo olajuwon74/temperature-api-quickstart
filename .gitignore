@@ -230,6 +230,7 @@ outputs/
 data/*
 !data/parcel_diridon_san_jose_sample.geojson
 !data/parcel_portfolio_san_jose_sample.geojson
+!data/dc_candidate_sites_loudoun_va_sample.geojson
 
 !data/heatmaps/
 data/heatmaps/*

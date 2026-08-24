@@ -1,0 +1,239 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "parcel_id": "xai-colossus-memphis",
+        "name": "xAI Colossus (Memphis, TN)",
+        "operator": "xAI",
+        "dats_score": 88,
+        "address": "3231 Paul R. Lowry Rd, Memphis, TN (former Electrolux plant)",
+        "source": "FortyGuard DATS 2025 Baseline report (fortyguard.com/post/data-center-ambient-thermal-screen-across-us) \u2014 one of 36 confirmed US AI data centers, publicly named in the report text.",
+        "note": "Illustrative ~300m footprint centered on the publicly reported facility address/area, not run through a geocoder \u2014 approximate, not a legal parcel boundary."
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -90.08064537556166,
+              35.019650253752296
+            ],
+            [
+              -90.07735462443833,
+              35.019650253752296
+            ],
+            [
+              -90.07735462443833,
+              35.022349746247706
+            ],
+            [
+              -90.08064537556166,
+              35.022349746247706
+            ],
+            [
+              -90.08064537556166,
+              35.019650253752296
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "parcel_id": "aws-northern-virginia",
+        "name": "AWS (Northern Virginia)",
+        "operator": "Amazon Web Services",
+        "dats_score": 77,
+        "address": "Ashburn / Loudoun County, VA \u2014 Data Center Alley",
+        "source": "FortyGuard DATS 2025 Baseline report (fortyguard.com/post/data-center-ambient-thermal-screen-across-us) \u2014 one of 36 confirmed US AI data centers, publicly named in the report text.",
+        "note": "Illustrative ~300m footprint centered on the publicly reported facility address/area, not run through a geocoder \u2014 approximate, not a legal parcel boundary."
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -77.47673460145845,
+              39.028650253752296
+            ],
+            [
+              -77.47326539854154,
+              39.028650253752296
+            ],
+            [
+              -77.47326539854154,
+              39.031349746247706
+            ],
+            [
+              -77.47673460145845,
+              39.031349746247706
+            ],
+            [
+              -77.47673460145845,
+              39.028650253752296
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "parcel_id": "aws-pennsylvania-nuclear",
+        "name": "AWS Cumulus (Berwick, PA \u2014 nuclear-adjacent)",
+        "operator": "Amazon Web Services",
+        "dats_score": 32,
+        "address": "Cumulus campus, Salem Township/Berwick, PA, adjacent to Susquehanna nuclear plant",
+        "source": "FortyGuard DATS 2025 Baseline report (fortyguard.com/post/data-center-ambient-thermal-screen-across-us) \u2014 one of 36 confirmed US AI data centers, publicly named in the report text.",
+        "note": "Illustrative ~300m footprint centered on the publicly reported facility address/area, not run through a geocoder \u2014 approximate, not a legal parcel boundary."
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -76.23788697351148,
+              41.056250253752296
+            ],
+            [
+              -76.23431302648851,
+              41.056250253752296
+            ],
+            [
+              -76.23431302648851,
+              41.058949746247706
+            ],
+            [
+              -76.23788697351148,
+              41.058949746247706
+            ],
+            [
+              -76.23788697351148,
+              41.056250253752296
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "parcel_id": "google-berkeley-county",
+        "name": "Google (Berkeley County, SC)",
+        "operator": "Google",
+        "dats_score": 77,
+        "address": "1669 Garrott Ave, Moncks Corner, SC",
+        "source": "FortyGuard DATS 2025 Baseline report (fortyguard.com/post/data-center-ambient-thermal-screen-across-us) \u2014 one of 36 confirmed US AI data centers, publicly named in the report text.",
+        "note": "Illustrative ~300m footprint centered on the publicly reported facility address/area, not run through a geocoder \u2014 approximate, not a legal parcel boundary."
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -79.99831026022017,
+              33.19485025375229
+            ],
+            [
+              -79.99508973977984,
+              33.19485025375229
+            ],
+            [
+              -79.99508973977984,
+              33.1975497462477
+            ],
+            [
+              -79.99831026022017,
+              33.1975497462477
+            ],
+            [
+              -79.99831026022017,
+              33.19485025375229
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "parcel_id": "microsoft-san-antonio",
+        "name": "Microsoft (San Antonio, TX)",
+        "operator": "Microsoft",
+        "dats_score": 77,
+        "address": "5150 Rogers Rd, San Antonio, TX area",
+        "source": "FortyGuard DATS 2025 Baseline report (fortyguard.com/post/data-center-ambient-thermal-screen-across-us) \u2014 one of 36 confirmed US AI data centers, publicly named in the report text.",
+        "note": "Illustrative ~300m footprint centered on the publicly reported facility address/area, not run through a geocoder \u2014 approximate, not a legal parcel boundary."
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -98.68154702129702,
+              29.422750253752294
+            ],
+            [
+              -98.67845297870299,
+              29.422750253752294
+            ],
+            [
+              -98.67845297870299,
+              29.425449746247704
+            ],
+            [
+              -98.68154702129702,
+              29.425449746247704
+            ],
+            [
+              -98.68154702129702,
+              29.422750253752294
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "parcel_id": "meta-forest-city",
+        "name": "Meta (Forest City, NC)",
+        "operator": "Meta",
+        "dats_score": 75,
+        "address": "480 Social Circle, Forest City, NC",
+        "source": "FortyGuard DATS 2025 Baseline report (fortyguard.com/post/data-center-ambient-thermal-screen-across-us) \u2014 one of 36 confirmed US AI data centers, publicly named in the report text.",
+        "note": "Illustrative ~300m footprint centered on the publicly reported facility address/area, not run through a geocoder \u2014 approximate, not a legal parcel boundary."
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -81.86145163736876,
+              35.328450253752294
+            ],
+            [
+              -81.85814836263125,
+              35.328450253752294
+            ],
+            [
+              -81.85814836263125,
+              35.3311497462477
+            ],
+            [
+              -81.86145163736876,
+              35.3311497462477
+            ],
+            [
+              -81.86145163736876,
+              35.328450253752294
+            ]
+          ]
+        ]
+      }
+    }
+  ]
+}
