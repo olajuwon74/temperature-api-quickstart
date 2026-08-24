@@ -247,3 +247,34 @@ data/street_view/*
 !data/env_params/
 data/env_params/*
 !data/env_params/env_params_parcel_*.json
+
+# dc_siting_cache: same rationale as the parcel notebooks above — ship the
+# cached FortyGuard responses for the *default* DC-siting comparison (the
+# 3 bundled DATS sites, 2025-07-01..2025-07-31) so app.py's default view
+# renders instantly on a fresh deploy instead of a judge's first click
+# triggering live API calls. Filenames are content-hash keys from
+# dc_siting/data.py's cache_key(); not human-readable, but exhaustively
+# listed so nothing else under data/dc_siting_cache/ ships accidentally.
+!data/dc_siting_cache/
+data/dc_siting_cache/*
+!data/dc_siting_cache/c8511904f6b0819e.json
+!data/dc_siting_cache/0147cc70320908d8.json
+!data/dc_siting_cache/a96581714ce3f192.json
+!data/dc_siting_cache/69d5a8ae040bbd27.json
+!data/dc_siting_cache/016cf6ea17dec3fb.json
+!data/dc_siting_cache/4c873870e8fff0e9.json
+!data/dc_siting_cache/022021036d95f001.json
+!data/dc_siting_cache/725d2ad28f7e3ab3.json
+!data/dc_siting_cache/16ecb2905af48e15.json
+!data/dc_siting_cache/2abea14defc9f91a.json
+!data/dc_siting_cache/414bc702925bebc0.json
+!data/dc_siting_cache/5f70b1d188d04397.json
+!data/dc_siting_cache/1074e9fa81d056b4.json
+!data/dc_siting_cache/1a094d15df021242.json
+!data/dc_siting_cache/b7ea4033cb77998c.json
+!data/dc_siting_cache/7241c28986c131d1.json
+!data/dc_siting_cache/443229b6f8758381.json
+!data/dc_siting_cache/56cf0e225bb21192.json
+!data/dc_siting_cache/fa4fb5ee6a73de57.json
+!data/dc_siting_cache/01e896137b76a154.json
+!data/dc_siting_cache/337d52104afeb8a0.json
