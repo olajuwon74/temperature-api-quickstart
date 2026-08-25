@@ -444,8 +444,11 @@ with st.sidebar:
         "Cost is projected to a full year by linearly scaling this window's "
         "conditions across 8,760 hours — an upper-bound-leaning estimate if "
         "this window is a summer peak rather than a full year. Keep the "
-        "window to ~31 days or less — the heatmap endpoint returns a server "
-        "error above roughly a month (confirmed: 31 days works, 60 fails)."
+        "window to 31 days — both the heatmap and env_params endpoints "
+        "share a range limit above roughly a month. It isn't one clean "
+        "cutoff: 31 days is reliably fast (~45s), 32 days got accepted but "
+        "sat processing without completing, and 34+ days is rejected "
+        "outright. 31 is the only window confirmed both fast and reliable."
     )
     refresh = st.checkbox("Force refresh (bypass cache, re-bill)", value=False)
 
