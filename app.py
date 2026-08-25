@@ -30,6 +30,7 @@ from dc_siting.cooling_cost import (
     kwh_from_bins,
     kwh_from_hourly_series,
     annualize,
+    annualize_seasonal,
 )
 from dc_siting.data import (
     DRY_BULB_LADDER_C,
@@ -39,6 +40,7 @@ from dc_siting.data import (
     pull_dry_bulb_bins,
     pull_wet_bulb_series,
 )
+from dc_siting.export import build_csv_bytes, build_pdf_bytes
 
 US_STATES = {
     "AL": "Alabama", "AK": "Alaska", "AZ": "Arizona", "AR": "Arkansas", "CA": "California",
@@ -117,6 +119,23 @@ def load_uploaded_sites(upload) -> list[dict]:
     return sites
 
 
+def _pull_window(client, site, start_date, end_date, refresh, status_box):
+    """One site, one date window -> (bins, wb_series, total_hours, lat, lon)."""
+    aoi, lat, lon = buffered_aoi(site["geometry"])
+
+    def on_status(msg: str, _name=site["name"], _w=f"{start_date}..{end_date}") -> None:
+        status_box.write(f"**{_name}** ({_w}) — {msg}")
+
+    hours_above, total_hours = pull_dry_bulb_bins(
+        client, CACHE_DIR, site["id"], aoi, start_date, end_date, refresh, on_status
+    )
+    bins = bins_from_exceedance_ladder(hours_above, total_hours, DRY_BULB_LADDER_C)
+    wb_series = pull_wet_bulb_series(
+        client, CACHE_DIR, site["id"], lat, lon, start_date, end_date, refresh, on_status
+    )
+    return bins, wb_series, total_hours, lat, lon
+
+
 def run_pipeline(
     client: FortyGuardClient,
     sites: list[dict],
@@ -127,35 +146,44 @@ def run_pipeline(
     arch_keys: list[str],
     refresh: bool,
     status_box,
+    seasonal: bool = False,
+    winter_start: str | None = None,
+    winter_end: str | None = None,
 ) -> tuple[pd.DataFrame, dict, dict]:
     rows = []
     bin_data: dict[str, list] = {}
     wb_data: dict[str, list] = {}
 
     for site in sites:
-        aoi, lat, lon = buffered_aoi(site["geometry"])
-
-        def on_status(msg: str, _name=site["name"]) -> None:
-            status_box.write(f"**{_name}** — {msg}")
-
-        hours_above, total_hours = pull_dry_bulb_bins(
-            client, CACHE_DIR, site["id"], aoi, start_date, end_date, refresh, on_status
+        summer_bins, summer_wb, summer_hours, lat, lon = _pull_window(
+            client, site, start_date, end_date, refresh, status_box
         )
-        bins = bins_from_exceedance_ladder(hours_above, total_hours, DRY_BULB_LADDER_C)
-        bin_data[site["id"]] = bins
+        bin_data[site["id"]] = summer_bins
+        wb_data[site["id"]] = summer_wb
 
-        wb_series = pull_wet_bulb_series(
-            client, CACHE_DIR, site["id"], lat, lon, start_date, end_date, refresh, on_status
-        )
-        wb_data[site["id"]] = wb_series
+        if seasonal:
+            winter_bins, winter_wb, winter_hours, _, _ = _pull_window(
+                client, site, winter_start, winter_end, refresh, status_box
+            )
 
         for key in arch_keys:
             arch = ARCHITECTURES[key]
-            if arch.driving_temp == "dry_bulb":
-                kwh = kwh_from_bins(arch, bins, it_load_kw)
+
+            def _kwh(bins, wb):
+                return kwh_from_bins(arch, bins, it_load_kw) if arch.driving_temp == "dry_bulb" else kwh_from_hourly_series(arch, wb, it_load_kw)
+
+            if seasonal:
+                windows = [
+                    ("summer", _kwh(summer_bins, summer_wb), summer_hours),
+                    ("winter", _kwh(winter_bins, winter_wb), winter_hours),
+                ]
+                result = annualize_seasonal(site["name"], arch, windows, rate)
+                study_hours = summer_hours + winter_hours
             else:
-                kwh = kwh_from_hourly_series(arch, wb_series, it_load_kw)
-            result = annualize(site["name"], arch, kwh, total_hours, rate)
+                kwh = _kwh(summer_bins, summer_wb)
+                result = annualize(site["name"], arch, kwh, summer_hours, rate)
+                study_hours = summer_hours
+
             rows.append(
                 {
                     "site_id": site["id"],
@@ -164,7 +192,7 @@ def run_pipeline(
                     "architecture": arch.label,
                     "annual_cost_usd": result.projected_annual_cost_usd,
                     "annual_kwh": result.projected_annual_kwh,
-                    "study_period_hours": result.study_period_hours,
+                    "study_period_hours": study_hours,
                     "lat": lat,
                     "lon": lon,
                 }
@@ -438,16 +466,38 @@ with st.sidebar:
     )
 
     st.header("Study window")
-    start_date = st.date_input("Start date", value=pd.Timestamp("2025-07-01")).isoformat()
-    end_date = st.date_input("End date", value=pd.Timestamp("2025-07-31")).isoformat()
+    seasonal = st.checkbox(
+        "Seasonal model (blend summer + winter — more honest annual estimate, ~2x the live calls)",
+        value=False,
+    )
+    start_date = st.date_input(
+        "Summer window start" if seasonal else "Start date", value=pd.Timestamp("2025-07-01")
+    ).isoformat()
+    end_date = st.date_input(
+        "Summer window end" if seasonal else "End date", value=pd.Timestamp("2025-07-31")
+    ).isoformat()
+    winter_start = winter_end = None
+    if seasonal:
+        winter_start = st.date_input("Winter window start", value=pd.Timestamp("2025-01-01")).isoformat()
+        winter_end = st.date_input("Winter window end", value=pd.Timestamp("2025-01-31")).isoformat()
+        st.caption(
+            "Each window's average power draw is weighted evenly across the "
+            "year (half from summer, half from winter) instead of scaling a "
+            "single month to the whole year — still a simplification, but a "
+            "meaningfully more honest one."
+        )
+    else:
+        st.caption(
+            "Cost is projected to a full year by linearly scaling this window's "
+            "conditions across 8,760 hours — an upper-bound-leaning estimate if "
+            "this window is a summer peak rather than a full year. Turn on the "
+            "seasonal model above for a less one-sided estimate."
+        )
     st.caption(
-        "Cost is projected to a full year by linearly scaling this window's "
-        "conditions across 8,760 hours — an upper-bound-leaning estimate if "
-        "this window is a summer peak rather than a full year. Keep the "
-        "window to 31 days — both the heatmap and env_params endpoints "
-        "share a range limit above roughly a month. It isn't one clean "
-        "cutoff: 31 days is reliably fast (~45s), 32 days got accepted but "
-        "sat processing without completing, and 34+ days is rejected "
+        "Keep each window to 31 days — both the heatmap and env_params "
+        "endpoints share a range limit above roughly a month. It isn't one "
+        "clean cutoff: 31 days is reliably fast (~45s), 32 days got accepted "
+        "but sat processing without completing, and 34+ days is rejected "
         "outright. 31 is the only window confirmed both fast and reliable."
     )
     refresh = st.checkbox("Force refresh (bypass cache, re-bill)", value=False)
@@ -466,7 +516,8 @@ if run:
     it_load_kw = facility_mw * 1000
     status_box = st.status("Pulling FortyGuard data…", expanded=True)
     df, bin_data, wb_data = run_pipeline(
-        client, sites, start_date, end_date, it_load_kw, rate, chosen_archs, refresh, status_box
+        client, sites, start_date, end_date, it_load_kw, rate, chosen_archs, refresh, status_box,
+        seasonal=seasonal, winter_start=winter_start, winter_end=winter_end,
     )
     status_box.update(label="Done.", state="complete", expanded=False)
     st.session_state["results"] = (df, bin_data, wb_data)
@@ -479,10 +530,16 @@ df, bin_data, wb_data = st.session_state["results"]
 
 # Headline callout
 headline_df = df[df["architecture_key"] == headline_arch].sort_values("annual_cost_usd")
+headline_text = ""
 if len(headline_df) >= 2:
     cheapest = headline_df.iloc[0]
     priciest = headline_df.iloc[-1]
     delta = priciest["annual_cost_usd"] - cheapest["annual_cost_usd"]
+    headline_text = (
+        f"With {arch_labels[headline_arch]}: {priciest['site']} costs an estimated "
+        f"${delta:,.0f}/yr more to cool than {cheapest['site']} "
+        f"(${cheapest['annual_cost_usd']:,.0f}/yr vs. ${priciest['annual_cost_usd']:,.0f}/yr)."
+    )
     st.subheader(f"With {arch_labels[headline_arch]}:")
     st.markdown(
         f"### 🔥 **{priciest['site']}** costs an estimated **${delta:,.0f}/yr** more "
@@ -494,6 +551,7 @@ if len(headline_df) >= 2:
     c3.metric("Delta", f"${delta:,.0f}/yr", delta=f"{delta / max(cheapest['annual_cost_usd'], 1):.0%}")
 elif len(headline_df) == 1:
     only = headline_df.iloc[0]
+    headline_text = f"{only['site']} — {arch_labels[headline_arch]}: ${only['annual_cost_usd']:,.0f}/yr"
     st.metric(f"{only['site']} — {arch_labels[headline_arch]}", f"${only['annual_cost_usd']:,.0f}/yr")
 
 st.divider()
@@ -527,6 +585,23 @@ table = df.pivot_table(index="site", columns="architecture", values="annual_cost
     columns=[ARCHITECTURES[k].label for k in ARCH_ORDER if k in chosen_archs]
 )
 st.dataframe(table.style.format("${:,.0f}"), use_container_width=True)
+
+exp_col1, exp_col2 = st.columns(2)
+with exp_col1:
+    st.download_button(
+        "Download CSV",
+        data=build_csv_bytes(df),
+        file_name="dc_cooling_cost_comparison.csv",
+        mime="text/csv",
+    )
+with exp_col2:
+    methodology_notes = [(arch.label, arch.source) for arch in ARCHITECTURES.values()]
+    st.download_button(
+        "Download PDF report",
+        data=build_pdf_bytes(df, headline_text, facility_mw, rate, methodology_notes),
+        file_name="dc_cooling_cost_report.pdf",
+        mime="application/pdf",
+    )
 
 # Site map
 st.subheader("Candidate sites")

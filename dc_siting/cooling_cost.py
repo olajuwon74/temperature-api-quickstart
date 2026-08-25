@@ -250,3 +250,51 @@ def annualize(
         projected_annual_kwh=projected_kwh,
         projected_annual_cost_usd=projected_cost,
     )
+
+
+@dataclass
+class SeasonalCostResult:
+    site_name: str
+    architecture: str
+    projected_annual_kwh: float
+    projected_annual_cost_usd: float
+    # One entry per sampled window — {"label", "avg_kw", "study_period_hours"} —
+    # kept for transparency in the UI, not just a black-box annual number.
+    window_breakdown: list[dict]
+
+
+def annualize_seasonal(
+    site_name: str,
+    arch: CoolingArchitecture,
+    windows: list[tuple[str, float, float]],
+    electricity_rate_usd_per_kwh: float,
+) -> SeasonalCostResult:
+    """Blend several representative windows (e.g. a summer + a winter month)
+    into an annual estimate, instead of `annualize`'s single-window linear
+    scale-up.
+
+    Each window is reduced to an average power draw (kWh / hours), and those
+    averages are weighted evenly across the year (8760 / len(windows) hours
+    each). That's still a simplification — real seasons aren't equal-length
+    slices centered on one sampled month — but it's a meaningfully more
+    honest annual estimate than assuming the whole year looks like whichever
+    single month got sampled, which is what `annualize` does alone.
+
+    `windows` is a list of (label, study_period_kwh, study_period_hours).
+    """
+    n = len(windows)
+    weight_hours = 8760.0 / n if n else 0.0
+    weighted_kwh = 0.0
+    breakdown = []
+    for label, kwh, hours in windows:
+        avg_kw = kwh / hours if hours else 0.0
+        weighted_kwh += avg_kw * weight_hours
+        breakdown.append({"label": label, "avg_kw": avg_kw, "study_period_hours": hours})
+    cost = weighted_kwh * electricity_rate_usd_per_kwh
+    return SeasonalCostResult(
+        site_name=site_name,
+        architecture=arch.label,
+        projected_annual_kwh=weighted_kwh,
+        projected_annual_cost_usd=cost,
+        window_breakdown=breakdown,
+    )
