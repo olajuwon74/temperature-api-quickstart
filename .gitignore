@@ -230,6 +230,7 @@ outputs/
 data/*
 !data/parcel_diridon_san_jose_sample.geojson
 !data/parcel_portfolio_san_jose_sample.geojson
+!data/dc_candidate_sites_loudoun_va_sample.geojson
 
 !data/heatmaps/
 data/heatmaps/*
@@ -246,3 +247,55 @@ data/street_view/*
 !data/env_params/
 data/env_params/*
 !data/env_params/env_params_parcel_*.json
+
+# dc_siting_cache: same rationale as the parcel notebooks above — ship the
+# cached FortyGuard responses for all 6 bundled DATS sites, 2025-07-01..
+# 2025-07-31, so app.py renders instantly for any combination of them on a
+# fresh deploy instead of a judge's first click triggering live API calls.
+# Filenames are content-hash keys from dc_siting/data.py's cache_key(); not
+# human-readable, but exhaustively listed so nothing else under
+# data/dc_siting_cache/ ships accidentally.
+!data/dc_siting_cache/
+data/dc_siting_cache/*
+!data/dc_siting_cache/c8511904f6b0819e.json
+!data/dc_siting_cache/0147cc70320908d8.json
+!data/dc_siting_cache/a96581714ce3f192.json
+!data/dc_siting_cache/69d5a8ae040bbd27.json
+!data/dc_siting_cache/016cf6ea17dec3fb.json
+!data/dc_siting_cache/4c873870e8fff0e9.json
+!data/dc_siting_cache/022021036d95f001.json
+!data/dc_siting_cache/725d2ad28f7e3ab3.json
+!data/dc_siting_cache/16ecb2905af48e15.json
+!data/dc_siting_cache/2abea14defc9f91a.json
+!data/dc_siting_cache/414bc702925bebc0.json
+!data/dc_siting_cache/5f70b1d188d04397.json
+!data/dc_siting_cache/1074e9fa81d056b4.json
+!data/dc_siting_cache/1a094d15df021242.json
+!data/dc_siting_cache/b7ea4033cb77998c.json
+!data/dc_siting_cache/7241c28986c131d1.json
+!data/dc_siting_cache/443229b6f8758381.json
+!data/dc_siting_cache/56cf0e225bb21192.json
+!data/dc_siting_cache/fa4fb5ee6a73de57.json
+!data/dc_siting_cache/01e896137b76a154.json
+!data/dc_siting_cache/337d52104afeb8a0.json
+!data/dc_siting_cache/f1db984f24ddc838.json
+!data/dc_siting_cache/5b2b8c09c671ebf3.json
+!data/dc_siting_cache/736d5dae32e31a8b.json
+!data/dc_siting_cache/1026676d1210196f.json
+!data/dc_siting_cache/c7127148df51dfa6.json
+!data/dc_siting_cache/270f0d4b6b910443.json
+!data/dc_siting_cache/28ccb5f2a50cb231.json
+!data/dc_siting_cache/83b302b0cc46a4cf.json
+!data/dc_siting_cache/5c60b5b09c2f3b1c.json
+!data/dc_siting_cache/6c0c3700277f06a5.json
+!data/dc_siting_cache/8ef31359e6589a89.json
+!data/dc_siting_cache/d80d7a8148b2f088.json
+!data/dc_siting_cache/28008789091b8211.json
+!data/dc_siting_cache/c3a5a99324bba295.json
+!data/dc_siting_cache/e506a019dbc421c6.json
+!data/dc_siting_cache/f6501d7527a51951.json
+!data/dc_siting_cache/2945105bd99422f6.json
+!data/dc_siting_cache/a8b6ecafd816036f.json
+!data/dc_siting_cache/86cda1a87eca9398.json
+!data/dc_siting_cache/a0a7a960dcb3bcaa.json
+!data/dc_siting_cache/61a3632ae8103310.json
