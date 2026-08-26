@@ -132,12 +132,3 @@ requiring resubmission).
 - Cooling cost is realistically a tie-breaker in real site selection, not
   the primary driver (power availability and incentives usually dominate) —
   this tool gives a partial, not complete, view of that decision, by design.
-
-## Credits
-
-Built on FortyGuard's Temperature API and the DATS 2025 Baseline report.
-Built end-to-end with Claude Code — architecture, live API integration and
-debugging, research (ASHRAE/field COP data/Uptime Institute citations, the
-DATS report itself, real US data-centre address verification), the
-Streamlit app and landing page, and automated browser testing to validate
-the full pipeline against live data before treating any result as real.
