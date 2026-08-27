@@ -94,7 +94,7 @@ def geocode_us_address(query: str) -> tuple[float, float] | None:
     return float(results[0]["lat"]), float(results[0]["lon"])
 
 
-def _cache_key(*parts: Any) -> str:
+def cache_key(*parts: Any) -> str:
     raw = json.dumps(parts, sort_keys=True, default=str)
     return hashlib.sha1(raw.encode()).hexdigest()[:16]
 
@@ -183,7 +183,7 @@ def pull_dry_bulb_bins(
     cache_dir.mkdir(parents=True, exist_ok=True)
     hours_above: dict[float, float] = {}
     for threshold in DRY_BULB_LADDER_C:
-        key = _cache_key("exceedance", site_id, start_date, end_date, threshold)
+        key = cache_key("exceedance", site_id, start_date, end_date, threshold)
         path = cache_dir / f"{key}.json"
         if not refresh and path.exists():
             on_status(f"cached: exceedance @ {threshold:.0f}C")
@@ -226,7 +226,7 @@ def pull_wet_bulb_series(
 ) -> list[float]:
     """Hourly wet-bulb series (°C) at the site centroid over the study window."""
     cache_dir.mkdir(parents=True, exist_ok=True)
-    key = _cache_key("wet_bulb", site_id, start_date, end_date)
+    key = cache_key("wet_bulb", site_id, start_date, end_date)
     path = cache_dir / f"{key}.json"
     if not refresh and path.exists():
         on_status("cached: wet-bulb series")

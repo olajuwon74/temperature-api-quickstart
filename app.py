@@ -35,6 +35,7 @@ from dc_siting.cooling_cost import (
 from dc_siting.data import (
     DRY_BULB_LADDER_C,
     buffered_aoi,
+    cache_key,
     geocode_us_address,
     point_footprint,
     pull_dry_bulb_bins,
@@ -203,152 +204,257 @@ def run_pipeline(
 # ── landing view ─────────────────────────────────────────────────────────
 st.session_state.setdefault("view", "landing")
 
+# Real sites/window this draws from — same as the pre-seeded cache, so this
+# reads live off disk (zero network calls) rather than a frozen snapshot
+# baked into copy that could drift from the actual calibrated model.
+_LANDING_SITES = [
+    ("xai-colossus-memphis", "xAI Colossus", "Memphis, TN"),
+    ("aws-northern-virginia", "AWS", "Northern Virginia"),
+    ("aws-pennsylvania-nuclear", "AWS Cumulus", "Berwick, PA"),
+    ("google-berkeley-county", "Google", "Berkeley County, SC"),
+    ("microsoft-san-antonio", "Microsoft", "San Antonio, TX"),
+    ("meta-forest-city", "Meta", "Forest City, NC"),
+]
+_LANDING_WINDOW = ("2025-07-01", "2025-07-31")
+_LANDING_IT_LOAD_KW = 5000.0
+_LANDING_RATE = 0.16
+
+
+@st.cache_data(show_spinner=False)
+def _landing_stats() -> dict | None:
+    """Real 6-site chiller+tower comparison + real 4-architecture comparison
+    at one named site, computed live from the pre-seeded cache. Returns None
+    (landing page skips the data section) if that cache isn't present, e.g.
+    a fresh clone without the committed cache files.
+    """
+    start, end = _LANDING_WINDOW
+    total_hours = 31 * 24.0
+    site_costs = []
+    va_arch_costs = None
+
+    for site_id, name, place in _LANDING_SITES:
+        hours_above = {}
+        for t in DRY_BULB_LADDER_C:
+            p = CACHE_DIR / f"{cache_key('exceedance', site_id, start, end, t)}.json"
+            if not p.exists():
+                return None
+            hours_above[t] = json.loads(p.read_text())["mean"]
+        bins = bins_from_exceedance_ladder(hours_above, total_hours, DRY_BULB_LADDER_C)
+
+        wb_path = CACHE_DIR / f"{cache_key('wet_bulb', site_id, start, end)}.json"
+        if not wb_path.exists():
+            return None
+        wb = json.loads(wb_path.read_text())
+
+        ct = ARCHITECTURES["chiller_tower"]
+        kwh = kwh_from_hourly_series(ct, wb, _LANDING_IT_LOAD_KW)
+        cost = annualize(name, ct, kwh, total_hours, _LANDING_RATE).projected_annual_cost_usd
+        site_costs.append((name, place, cost))
+
+        if site_id == "aws-northern-virginia":
+            va_arch_costs = []
+            for key in ARCH_ORDER:
+                a = ARCHITECTURES[key]
+                kwh2 = (
+                    kwh_from_bins(a, bins, _LANDING_IT_LOAD_KW)
+                    if a.driving_temp == "dry_bulb"
+                    else kwh_from_hourly_series(a, wb, _LANDING_IT_LOAD_KW)
+                )
+                cost2 = annualize(name, a, kwh2, total_hours, _LANDING_RATE).projected_annual_cost_usd
+                va_arch_costs.append((a.label.split(" — ")[0], cost2))
+
+    site_costs.sort(key=lambda r: r[2])
+    return {"sites": site_costs, "arch": va_arch_costs}
+
 
 def _launch() -> None:
     st.session_state.view = "app"
 
 
+def _flatten(html: str) -> str:
+    """Strip leading whitespace from every line. A blank line followed by an
+    indented line inside st.markdown(unsafe_allow_html=True) gets misread as
+    a Markdown indented code block instead of raw HTML — confirmed live,
+    this rendered as visible literal tag text instead of applying as markup.
+    Dedent alone doesn't fully fix it once content nests past the common
+    prefix, so every line is stripped individually instead.
+    """
+    return "\n".join(line.lstrip() for line in html.split("\n"))
+
+
 if st.session_state.view == "landing":
     bg_b64 = _b64(HERO_BG)
-    logo_b64 = _b64(LOGO)
+    stats = _landing_stats()
+
+    def _bar_row(name: str, sub: str, value: float, maxval: float, kind: str = "site") -> str:
+        # Single line, no leading indentation — a blank line followed by an
+        # indented line inside an st.markdown call gets misread as a Markdown
+        # indented code block instead of raw HTML (confirmed live: this was
+        # rendering as visible literal tag text, not applying as markup).
+        pct = round(value / maxval * 100, 1) if maxval else 0
+        return (
+            f'<div class="bar-row"><div class="bar-label"><span class="bl-name">{name}</span>'
+            f'<span class="bl-sub">{sub}</span></div><div class="bar-track">'
+            f'<div class="bar-fill {kind}" style="width:{pct}%"></div></div>'
+            f'<div class="bar-value">${value:,.0f}</div></div>'
+        )
+
+    landing_css = """
+    <style>
+    @keyframes dc-fade-up { from { opacity:0; transform:translateY(18px);} to { opacity:1; transform:translateY(0);} }
+    @keyframes dc-pan { 0% { background-position:50% 15%;} 100% { background-position:50% 45%;} }
+    .dc-page { font-family:-apple-system,"Segoe UI",system-ui,sans-serif; }
+    .dc-hero {
+        position:relative; min-height:70vh; border-radius:20px; overflow:hidden;
+        padding:3.2vw 3.6vw 4.5vw 3.6vw; display:flex; flex-direction:column; justify-content:center;
+        color:#fdfdfd; margin-bottom:0;
+        background-image: linear-gradient(120deg, rgba(5,16,32,.92) 0%, rgba(8,28,54,.68) 48%, rgba(5,16,32,.94) 100%), url('data:image/jpeg;base64,__BG__');
+        background-size:cover; background-position:50% 25%; animation: dc-pan 22s ease-in-out infinite alternate;
+    }
+    .dc-hero h1 { font-size:clamp(1.9rem, 3.6vw, 3rem); line-height:1.1; font-weight:800; margin:0 0 16px 0; max-width:18ch; letter-spacing:-0.01em; animation: dc-fade-up .7s ease both; }
+    .dc-hero h1 em { font-style:normal; color:#ff8a5c; }
+    .dc-hero p.sub { font-size:.98rem; line-height:1.55; max-width:52ch; color:#c7d3e0; margin:0 0 30px 0; animation: dc-fade-up .8s ease both .28s; }
+    .dc-quiet { font-size:.78rem; color:#9fb0c6; margin-top:10px; }
+    .dc-quiet b { color:#e6ecf5; }
+    .dc-section { padding: 56px 0 0 0; }
+    .dc-kicker { font-size:.72rem; letter-spacing:.13em; text-transform:uppercase; color:#e0633f; font-weight:700; margin:0 0 12px 0; }
+    .dc-section h2 { font-size:clamp(1.3rem, 2.2vw, 1.7rem); font-weight:700; letter-spacing:-0.01em; margin:0 0 14px 0; max-width:32ch; color:#171717; }
+    .dc-lede { font-size:.95rem; color:#4b4b4b; max-width:60ch; line-height:1.6; margin:0 0 32px 0; }
+    .dc-lede b { color:#171717; }
+    .bars { display:flex; flex-direction:column; gap:12px; margin-bottom: 8px; }
+    .bar-row { display:grid; grid-template-columns: 170px 1fr 100px; align-items:center; gap:14px; }
+    .bar-label { display:flex; flex-direction:column; }
+    .bl-name { font-size:13px; font-weight:600; color:#171717; }
+    .bl-sub { font-size:11px; color:#8a8a8a; }
+    .bar-track { height:9px; background:#eeeeee; border-radius:5px; overflow:hidden; }
+    .bar-fill { height:100%; border-radius:5px; background:linear-gradient(90deg,#c94a2c,#ff6b3d); }
+    .bar-fill.arch { background:linear-gradient(90deg,#1a5f8a,#3fa9f5); }
+    .bar-value { font-size:12.5px; text-align:right; color:#4b4b4b; font-variant-numeric:tabular-nums; }
+    .finding-box { margin-top:24px; padding:18px 22px; background:#faf4f1; border-left:3px solid #e0633f; font-size:14px; color:#4b4b4b; line-height:1.6; max-width:60ch; border-radius: 0 8px 8px 0;}
+    .finding-box b { color:#171717; }
+    .dc-cards { display:grid; grid-template-columns:repeat(auto-fit,minmax(210px,1fr)); gap:1px; background:#e4e4e4; border:1px solid #e4e4e4; border-radius:10px; overflow:hidden; margin-top:8px; }
+    .dc-card { background:#fff; padding:20px 20px; }
+    .dc-card .n { font-size:10.5px; color:#a0a0a0; margin-bottom:8px; }
+    .dc-card h3 { font-size:14.5px; font-weight:700; margin:0 0 6px 0; color:#171717; }
+    .dc-card p { font-size:12.5px; color:#6b6b6b; line-height:1.5; margin:0; }
+    .dc-sources { display:flex; flex-direction:column; border-top:1px solid #e4e4e4; margin-top:8px; }
+    .dc-source { display:grid; grid-template-columns:210px 1fr; gap:20px; padding:16px 0; border-bottom:1px solid #e4e4e4; }
+    .dc-source .name { font-size:13.5px; font-weight:700; color:#171717; }
+    .dc-source .desc { font-size:12.5px; color:#6b6b6b; line-height:1.5; }
+    .dc-footer { padding: 32px 0 8px 0; display:flex; justify-content:space-between; flex-wrap:wrap; gap:10px; font-size:11px; color:#9a9a9a; border-top:1px solid #e4e4e4; margin-top:40px; }
+    @media (max-width: 680px) { .bar-row, .dc-source { grid-template-columns:1fr; gap:6px; } .bar-value { text-align:left; } }
+    </style>
+    """.replace("__BG__", bg_b64)
+
+    hero_html = f"""
+    <div class="dc-page">
+      <div class="dc-hero">
+        <h1>FortyGuard found a 45-point thermal gap between two AWS sites. <em>We priced it.</em></h1>
+        <p class="sub">
+          The Data-Centre Siting &amp; Cooling-Cost Engine turns FortyGuard's hyperlocal
+          temperature data into the real annual dollar difference between candidate sites
+          and cooling designs. It's the figure their own DATS report stopped short of computing.
+        </p>
+    """
+    st.markdown(_flatten(landing_css + hero_html), unsafe_allow_html=True)
 
     st.markdown(
-        f"""
-        <style>
-        @keyframes dc-fade-up {{
-            from {{ opacity: 0; transform: translateY(18px); }}
-            to   {{ opacity: 1; transform: translateY(0); }}
-        }}
-        @keyframes dc-pan {{
-            0%   {{ background-position: 50% 15%; }}
-            100% {{ background-position: 50% 45%; }}
-        }}
-        @keyframes dc-glow {{
-            0%, 100% {{ opacity: .35; transform: scale(1); }}
-            50%      {{ opacity: .65; transform: scale(1.08); }}
-        }}
-        @keyframes dc-float {{
-            0%, 100% {{ transform: translateY(0); }}
-            50%      {{ transform: translateY(-6px); }}
-        }}
-        .dc-hero {{
-            position: relative;
-            min-height: 74vh;
-            border-radius: 20px;
-            overflow: hidden;
-            padding: 3.2vw 3.6vw 5.5vw 3.6vw;
-            display: flex;
-            flex-direction: column;
-            justify-content: center;
-            color: #fdfdfd;
-            background-image:
-                linear-gradient(120deg, rgba(5,16,32,.90) 0%, rgba(8,28,54,.62) 48%, rgba(5,16,32,.92) 100%),
-                url('data:image/jpeg;base64,{bg_b64}');
-            background-size: cover;
-            background-position: 50% 25%;
-            animation: dc-pan 22s ease-in-out infinite alternate;
-        }}
-        .dc-glow-blob {{
-            position: absolute;
-            width: 480px; height: 480px;
-            left: -160px; top: -140px;
-            border-radius: 50%;
-            background: radial-gradient(circle, rgba(255,107,53,.55), transparent 70%);
-            filter: blur(50px);
-            animation: dc-glow 7s ease-in-out infinite;
-            pointer-events: none;
-        }}
-        .dc-hero img.dc-logo {{
-            height: 22px; width: auto; opacity: .92; margin: 0 0 22px 0 !important;
-            display: block !important; align-self: flex-start !important; float: none !important;
-            animation: dc-fade-up .7s ease both;
-        }}
-        .dc-eyebrow {{
-            font-size: .82rem; letter-spacing: .12em; text-transform: uppercase;
-            color: #ffb38a; font-weight: 600; margin-bottom: 14px;
-            animation: dc-fade-up .7s ease both; animation-delay: .05s;
-        }}
-        .dc-hero h1 {{
-            font-size: clamp(2.1rem, 4vw, 3.4rem); line-height: 1.08; font-weight: 800;
-            margin: 0 0 18px 0; max-width: 780px; letter-spacing: -0.01em;
-            animation: dc-fade-up .8s ease both; animation-delay: .12s;
-        }}
-        .dc-hero h2 {{
-            font-size: clamp(1.05rem, 1.6vw, 1.35rem); font-weight: 500; line-height: 1.4;
-            margin: 0 0 14px 0; max-width: 620px; color: #eef3fa;
-            animation: dc-fade-up .8s ease both; animation-delay: .22s;
-        }}
-        .dc-hero p {{
-            font-size: .98rem; line-height: 1.55; max-width: 560px; color: #c7d3e0;
-            animation: dc-fade-up .8s ease both; animation-delay: .32s;
-        }}
-        .dc-badges {{
-            position: absolute; right: 4vw; top: 50%; transform: translateY(-50%);
-            display: flex; flex-direction: column; gap: 20px; z-index: 2;
-        }}
-        .dc-badge {{
-            width: 54px; height: 54px; border-radius: 50%;
-            border: 1.5px solid rgba(255,255,255,.32);
-            background: rgba(255,255,255,.06);
-            display: flex; align-items: center; justify-content: center;
-            animation: dc-fade-up .7s ease both, dc-float 4.5s ease-in-out infinite;
-        }}
-        .dc-badge svg {{ width: 22px; height: 22px; }}
-        @media (max-width: 900px) {{ .dc-badges {{ display: none; }} }}
-        </style>
-
-        <div class="dc-hero">
-          <div class="dc-glow-blob"></div>
-          <img class="dc-logo" src="data:image/png;base64,{logo_b64}" />
-          <div class="dc-eyebrow">FortyGuard Hackathon '26</div>
-          <h1>Data-Centre Siting &amp; Cooling-Cost Engine</h1>
-          <h2>Know which candidate site costs more to cool — in real dollars — before you break ground.</h2>
-          <p>
-            Built on FortyGuard's hyperlocal, 2m-measured temperature data —
-            turning site-to-site microclimate differences into an annual
-            cooling-cost comparison, not just a temperature map.
-          </p>
-          <div class="dc-badges">
-            <div class="dc-badge" style="animation-delay:.15s,0s" title="Hyperlocal temperature">
-              <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-                <rect x="10" y="3" width="4" height="12" rx="2"/><circle cx="12" cy="18" r="3.4"/>
-              </svg>
-            </div>
-            <div class="dc-badge" style="animation-delay:.3s,.4s" title="Candidate sites">
-              <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M12 21s7-7.58 7-12A7 7 0 1 0 5 9c0 4.42 7 12 7 12z"/><circle cx="12" cy="9" r="2.3"/>
-              </svg>
-            </div>
-            <div class="dc-badge" style="animation-delay:.45s,.8s" title="Annual cost">
-              <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-                <line x1="12" y1="2" x2="12" y2="22"/><path d="M17 6.8c0-1.9-2.2-2.9-5-2.9s-5 1.1-5 2.9 2.2 2.5 5 2.9 5 1.1 5 2.9-2.2 2.9-5 2.9-5-1-5-2.9"/>
-              </svg>
-            </div>
-            <div class="dc-badge" style="animation-delay:.6s,1.2s" title="Data-centre cooling">
-              <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-                <rect x="3" y="4" width="18" height="6" rx="1.5"/><rect x="3" y="14" width="18" height="6" rx="1.5"/>
-                <circle cx="7" cy="7" r=".9" fill="#fff" stroke="none"/><circle cx="7" cy="17" r=".9" fill="#fff" stroke="none"/>
-              </svg>
-            </div>
-          </div>
-        </div>
-        """,
+        "<style>"
+        "div[data-testid='stButton'] button{font-size:1rem !important; font-weight:700 !important;"
+        "padding:.85rem 1.7rem !important; border-radius:10px !important;}"
+        ".st-key-hero_cta{margin:-2.6rem 0 0 3.2vw !important; max-width:280px;}"
+        ".st-key-closing_cta{margin-top:.6rem;}"
+        "</style>",
         unsafe_allow_html=True,
     )
+    st.button("Open the live comparison →", type="primary", key="hero_cta", on_click=_launch)
 
-    st.markdown(
+    mid_html = ""
+    if stats:
+        cheapest, priciest = stats["sites"][0], stats["sites"][-1]
+        delta = priciest[2] - cheapest[2]
+        mid_html += f"""
+        <p class="dc-quiet" style="margin:14px 0 0 3.2vw;">6 real named AI data centres &middot; <b>${delta:,.0f}/yr</b> separates cheapest from priciest</p>
         """
-        <style>
-        div[data-testid='stButton']{ margin: -5.4rem 0 0 3.2vw; max-width: 260px; }
-        div[data-testid='stButton'] button{
-            font-size: 1.1rem !important; font-weight: 700 !important;
-            padding: .9rem 1.8rem !important; border-radius: 10px !important;
-        }
-        </style>
-        """,
+    mid_html += "</div>"  # close .dc-hero
+
+    if stats:
+        site_rows = "".join(_bar_row(n, p, v, stats["sites"][-1][2]) for n, p, v in stats["sites"])
+        max_arch = max(v for _, v in stats["arch"])
+        arch_rows = "".join(_bar_row(n, "", v, max_arch, "arch") for n, v in stats["arch"])
+        cheapest, priciest = stats["sites"][0], stats["sites"][-1]
+        delta = priciest[2] - cheapest[2]
+        arch_cheap, arch_rich = stats["arch"][-1], stats["arch"][0]
+
+        mid_html += f"""
+        <div class="dc-section">
+          <div class="dc-kicker">The comparison</div>
+          <h2>Same architecture, same facility size, six real sites.</h2>
+          <p class="dc-lede">Every site below is one of the 36 real, named US AI data centres FortyGuard scored in its
+          own DATS 2025 Baseline report, run through the same 5&nbsp;MW water-cooled chiller model, same
+          electricity rate, same month of real hyperlocal temperature data.</p>
+          <div class="bars">{site_rows}</div>
+          <div class="finding-box"><b>${delta:,.0f}/yr</b> separates {cheapest[0]} ({cheapest[1]}) from {priciest[0]}
+          ({priciest[1]}), a real, moderate, defensible gap between real facilities, not a hypothetical.</div>
+        </div>
+
+        <div class="dc-section">
+          <div class="dc-kicker">The bigger lever</div>
+          <h2>Cooling architecture often moves the number more than location does.</h2>
+          <p class="dc-lede">Same real site, AWS's Northern Virginia facility, run through all four
+          cooling designs the tool supports.</p>
+          <div class="bars">{arch_rows}</div>
+        </div>
+        """
+
+    mid_html += """
+    <div class="dc-section">
+      <div class="dc-kicker">How it works</div>
+      <h2>Two live FortyGuard endpoints, one calibrated model.</h2>
+      <p class="dc-lede">A threshold ladder against the heatmap endpoint builds a dry-bulb exposure profile; an
+      hourly wet-bulb series from env_params drives the three evaporation-dependent architectures.</p>
+      <div class="dc-cards">
+        <div class="dc-card"><div class="n">01</div><h3>Air-cooled DX / CRAC</h3><p>Legacy &amp; small-site standard. Narrowest free-cooling band.</p></div>
+        <div class="dc-card"><div class="n">02</div><h3>Chiller + tower</h3><p>Enterprise standard for two decades. Waterside economizer below threshold.</p></div>
+        <div class="dc-card"><div class="n">03</div><h3>Evaporative / adiabatic</h3><p>Modern hyperscale choice. Degrades fastest as humidity rises.</p></div>
+        <div class="dc-card"><div class="n">04</div><h3>Direct-to-chip liquid</h3><p>AI-era, GPU-density racks. Widest free-cooling band.</p></div>
+      </div>
+    </div>
+
+    <div class="dc-section">
+      <div class="dc-kicker">Calibrated, not guessed</div>
+      <h2>Every efficiency number traces to a named source.</h2>
+      <div class="dc-sources">
+        <div class="dc-source"><div class="name">ASHRAE TC9.9 (5th ed.)</div><div class="desc">Air classes A1&ndash;A4, the 18&ndash;27&deg;C recommended envelope, and liquid-cooling facility-water classes W17&ndash;W45+.</div></div>
+        <div class="dc-source"><div class="name">Field-reported COP data</div><div class="desc">Legacy CRAC 1.5&ndash;2.5, ASHRAE 90.1-2019 minimum (2.2), modern chiller+CRAH systems (4.5&ndash;9.75).</div></div>
+        <div class="dc-source"><div class="name">Evaporative-cooling research</div><div class="desc">Dew-point COP up to ~29.7 average (peak 48.3), most effective below ~20&deg;C wet-bulb.</div></div>
+        <div class="dc-source"><div class="name">Uptime Institute 2025 Survey</div><div class="desc">1.54 average global PUE, used as a sanity ceiling against every architecture's implied overhead.</div></div>
+      </div>
+    </div>
+
+    <div class="dc-section" style="border-top:1px solid #e4e4e4; margin-top:16px;">
+      <div class="dc-kicker">Try it</div>
+      <h2>Compare your own candidate sites.</h2>
+      <p class="dc-lede">Use the six real DATS sites, type in a planned address, or upload your own site boundaries,
+      and get the real number back.</p>
+    """
+    st.markdown(_flatten(mid_html), unsafe_allow_html=True)
+
+    st.button("Open the live comparison →", type="primary", key="closing_cta", on_click=_launch)
+
+    st.markdown(
+        _flatten(
+            """
+            </div>
+            <div class="dc-footer">
+              <span>Data-Centre Siting &amp; Cooling-Cost Engine &middot; FortyGuard Hackathon '26</span>
+              <span>Extends FortyGuard's DATS 2025 Baseline report</span>
+            </div>
+            </div>
+            """
+        ),
         unsafe_allow_html=True,
     )
-    st.button("Launch the tool →", type="primary", on_click=_launch)
     st.stop()
 
 # ── sidebar ──────────────────────────────────────────────────────────────
