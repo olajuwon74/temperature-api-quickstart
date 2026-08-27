@@ -1,9 +1,13 @@
 name: Keep live demo awake
 
 # Streamlit Community Cloud's free tier sleeps an app after a stretch with
-# no visitors. This pings the live demo periodically so it stays warm for
-# hackathon judging. Runs from main only — GitHub only fires `schedule`
-# triggers from a repo's default branch.
+# no real visitors. A plain HTTP GET does NOT prevent this — confirmed live:
+# the root URL 303-redirects to share.streamlit.io's auth/routing layer
+# without ever reaching the running app, so curl/basic uptime-monitor pings
+# never reset Streamlit's actual inactivity timer. This uses a real headless
+# browser instead, so it executes the JS and opens a genuine session, the
+# same as an actual visitor. Runs from main only — GitHub only fires
+# `schedule` triggers from a repo's default branch.
 
 on:
   schedule:
@@ -14,7 +18,26 @@ jobs:
   ping:
     runs-on: ubuntu-latest
     steps:
-      - name: Ping the live Streamlit app
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Playwright + Chromium
         run: |
-          curl -sS --max-time 30 -o /dev/null -w "HTTP %{http_code}\n" \
-            https://coolcost-engine.streamlit.app/ || echo "Ping failed (app may be waking up) — continuing"
+          pip install playwright
+          playwright install --with-deps chromium
+
+      - name: Visit the live demo with a real browser
+        run: |
+          python - <<'EOF'
+          from playwright.sync_api import sync_playwright
+
+          url = "https://coolcost-engine.streamlit.app/"
+          with sync_playwright() as p:
+              browser = p.chromium.launch()
+              page = browser.new_page()
+              page.goto(url, timeout=60000, wait_until="networkidle")
+              page.wait_for_timeout(3000)
+              print(f"Visited {url} — title: {page.title()!r}")
+              browser.close()
+          EOF
