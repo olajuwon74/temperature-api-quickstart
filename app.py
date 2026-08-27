@@ -303,8 +303,12 @@ if st.session_state.view == "landing":
     <style>
     @keyframes dc-fade-up { from { opacity:0; transform:translateY(18px);} to { opacity:1; transform:translateY(0);} }
     @keyframes dc-pan { 0% { background-position:50% 15%;} 100% { background-position:50% 45%;} }
-    .dc-page { font-family:-apple-system,"Segoe UI",system-ui,sans-serif; }
+    .dc-page {
+        font-family:-apple-system,"Segoe UI",system-ui,sans-serif;
+        background:#ffffff; color:#171717; padding-bottom:8px;
+    }
     .dc-hero {
+        font-family:-apple-system,"Segoe UI",system-ui,sans-serif;
         position:relative; min-height:70vh; border-radius:20px; overflow:hidden;
         padding:3.2vw 3.6vw 4.5vw 3.6vw; display:flex; flex-direction:column; justify-content:center;
         color:#fdfdfd; margin-bottom:0;
@@ -314,8 +318,8 @@ if st.session_state.view == "landing":
     .dc-hero h1 { font-size:clamp(1.9rem, 3.6vw, 3rem); line-height:1.1; font-weight:800; margin:0 0 16px 0; max-width:18ch; letter-spacing:-0.01em; animation: dc-fade-up .7s ease both; }
     .dc-hero h1 em { font-style:normal; color:#ff8a5c; }
     .dc-hero p.sub { font-size:.98rem; line-height:1.55; max-width:52ch; color:#c7d3e0; margin:0 0 30px 0; animation: dc-fade-up .8s ease both .28s; }
-    .dc-quiet { font-size:.78rem; color:#9fb0c6; margin-top:10px; }
-    .dc-quiet b { color:#e6ecf5; }
+    .dc-quiet { font-size:.78rem; color:#8a8a8a; margin:20px 0 0 0; }
+    .dc-quiet b { color:#171717; }
     .dc-section { padding: 56px 0 0 0; }
     .dc-kicker { font-size:.72rem; letter-spacing:.13em; text-transform:uppercase; color:#e0633f; font-weight:700; margin:0 0 12px 0; }
     .dc-section h2 { font-size:clamp(1.3rem, 2.2vw, 1.7rem); font-weight:700; letter-spacing:-0.01em; margin:0 0 14px 0; max-width:32ch; color:#171717; }
@@ -347,14 +351,14 @@ if st.session_state.view == "landing":
     """.replace("__BG__", bg_b64)
 
     hero_html = f"""
-    <div class="dc-page">
-      <div class="dc-hero">
-        <h1>FortyGuard found a 45-point thermal gap between two AWS sites. <em>We priced it.</em></h1>
-        <p class="sub">
-          The Data-Centre Siting &amp; Cooling-Cost Engine turns FortyGuard's hyperlocal
-          temperature data into the real annual dollar difference between candidate sites
-          and cooling designs. It's the figure their own DATS report stopped short of computing.
-        </p>
+    <div class="dc-hero">
+      <h1>FortyGuard found a 45-point thermal gap between two AWS sites. <em>We priced it.</em></h1>
+      <p class="sub">
+        The Data-Centre Siting &amp; Cooling-Cost Engine turns FortyGuard's hyperlocal
+        temperature data into the real annual dollar difference between candidate sites
+        and cooling designs. It's the figure their own DATS report stopped short of computing.
+      </p>
+    </div>
     """
     st.markdown(_flatten(landing_css + hero_html), unsafe_allow_html=True)
 
@@ -362,21 +366,24 @@ if st.session_state.view == "landing":
         "<style>"
         "div[data-testid='stButton'] button{font-size:1rem !important; font-weight:700 !important;"
         "padding:.85rem 1.7rem !important; border-radius:10px !important;}"
-        ".st-key-hero_cta{margin:-2.6rem 0 0 3.2vw !important; max-width:280px;}"
-        ".st-key-closing_cta{margin-top:.6rem;}"
+        ".st-key-hero_cta, .st-key-closing_cta{margin-top:.8rem; max-width:220px;}"
         "</style>",
         unsafe_allow_html=True,
     )
-    st.button("Open the live comparison →", type="primary", key="hero_cta", on_click=_launch)
+    st.button("Launch tool →", type="primary", key="hero_cta", on_click=_launch)
 
-    mid_html = ""
+    # Self-contained fragment with its own background/text-color wrapper —
+    # an unclosed <div> here can't inherit styling from hero_html's div,
+    # since each st.markdown call is parsed as its own independent HTML
+    # fragment (confirmed live: that's why the white background never
+    # actually reached this content before).
+    mid_html = '<div class="dc-page">'
     if stats:
         cheapest, priciest = stats["sites"][0], stats["sites"][-1]
         delta = priciest[2] - cheapest[2]
         mid_html += f"""
-        <p class="dc-quiet" style="margin:14px 0 0 3.2vw;">6 real named AI data centres &middot; <b>${delta:,.0f}/yr</b> separates cheapest from priciest</p>
+        <p class="dc-quiet">6 real named AI data centres &middot; <b>${delta:,.0f}/yr</b> separates cheapest from priciest</p>
         """
-    mid_html += "</div>"  # close .dc-hero
 
     if stats:
         site_rows = "".join(_bar_row(n, p, v, stats["sites"][-1][2]) for n, p, v in stats["sites"])
@@ -438,14 +445,15 @@ if st.session_state.view == "landing":
       <p class="dc-lede">Use the six real DATS sites, type in a planned address, or upload your own site boundaries,
       and get the real number back.</p>
     """
+    mid_html += "</div>"  # close this call's own .dc-page wrapper
     st.markdown(_flatten(mid_html), unsafe_allow_html=True)
 
-    st.button("Open the live comparison →", type="primary", key="closing_cta", on_click=_launch)
+    st.button("Launch tool →", type="primary", key="closing_cta", on_click=_launch)
 
     st.markdown(
         _flatten(
             """
-            </div>
+            <div class="dc-page">
             <div class="dc-footer">
               <span>Data-Centre Siting &amp; Cooling-Cost Engine &middot; FortyGuard Hackathon '26</span>
               <span>Extends FortyGuard's DATS 2025 Baseline report</span>
