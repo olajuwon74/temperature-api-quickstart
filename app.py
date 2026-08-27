@@ -307,17 +307,26 @@ if st.session_state.view == "landing":
         font-family:-apple-system,"Segoe UI",system-ui,sans-serif;
         background:#ffffff; color:#171717; padding-bottom:8px;
     }
-    .dc-hero {
-        font-family:-apple-system,"Segoe UI",system-ui,sans-serif;
-        position:relative; min-height:70vh; border-radius:20px; overflow:hidden;
-        padding:3.2vw 3.6vw 4.5vw 3.6vw; display:flex; flex-direction:column; justify-content:center;
-        color:#fdfdfd; margin-bottom:0;
+    .st-key-hero_wrap {
+        position:relative; z-index:0; border-radius:20px; overflow:hidden;
+        padding:3.2vw 3.6vw 2.6vw 3.6vw; margin-bottom:0; min-height:46vh;
+        display:flex; flex-direction:column; justify-content:center;
+    }
+    /* Streamlit gives every element's own wrapper `position:relative`, which
+       would otherwise become the containing block for the absolutely
+       positioned bg layer below and collapse it to 0 height. Neutralise it
+       on just this first wrapper so .dc-hero-bg sizes against .st-key-hero_wrap
+       instead (confirmed live via getComputedStyle — this was the real bug). */
+    .st-key-hero_wrap .stElementContainer:first-child { position:static; }
+    .dc-hero-bg {
+        position:absolute; top:0; left:0; width:100%; height:100%; z-index:-1;
         background-image: linear-gradient(120deg, rgba(5,16,32,.92) 0%, rgba(8,28,54,.68) 48%, rgba(5,16,32,.94) 100%), url('data:image/jpeg;base64,__BG__');
         background-size:cover; background-position:50% 25%; animation: dc-pan 22s ease-in-out infinite alternate;
     }
-    .dc-hero h1 { font-size:clamp(1.9rem, 3.6vw, 3rem); line-height:1.1; font-weight:800; margin:0 0 16px 0; max-width:18ch; letter-spacing:-0.01em; animation: dc-fade-up .7s ease both; }
-    .dc-hero h1 em { font-style:normal; color:#ff8a5c; }
-    .dc-hero p.sub { font-size:.98rem; line-height:1.55; max-width:52ch; color:#c7d3e0; margin:0 0 30px 0; animation: dc-fade-up .8s ease both .28s; }
+    .dc-hero-text { font-family:-apple-system,"Segoe UI",system-ui,sans-serif; color:#fdfdfd; }
+    .dc-hero-text h1 { font-size:clamp(1.9rem, 3.6vw, 3rem); line-height:1.1; font-weight:800; margin:0 0 16px 0; max-width:18ch; letter-spacing:-0.01em; animation: dc-fade-up .7s ease both; }
+    .dc-hero-text h1 em { font-style:normal; color:#ff8a5c; }
+    .dc-hero-text p.sub { font-size:.98rem; line-height:1.55; max-width:52ch; color:#c7d3e0; margin:0 0 8px 0; animation: dc-fade-up .8s ease both .28s; }
     .dc-quiet { font-size:.78rem; color:#8a8a8a; margin:20px 0 0 0; }
     .dc-quiet b { color:#171717; }
     .dc-section { padding: 56px 0 0 0; }
@@ -350,8 +359,8 @@ if st.session_state.view == "landing":
     </style>
     """.replace("__BG__", bg_b64)
 
-    hero_html = f"""
-    <div class="dc-hero">
+    hero_text_html = """
+    <div class="dc-hero-text">
       <h1>FortyGuard found a 45-point thermal gap between two AWS sites. <em>We priced it.</em></h1>
       <p class="sub">
         The Data-Centre Siting &amp; Cooling-Cost Engine turns FortyGuard's hyperlocal
@@ -360,17 +369,25 @@ if st.session_state.view == "landing":
       </p>
     </div>
     """
-    st.markdown(_flatten(landing_css + hero_html), unsafe_allow_html=True)
-
     st.markdown(
         "<style>"
         "div[data-testid='stButton'] button{font-size:1rem !important; font-weight:700 !important;"
         "padding:.85rem 1.7rem !important; border-radius:10px !important;}"
-        ".st-key-hero_cta, .st-key-closing_cta{margin-top:.8rem; max-width:220px;}"
+        ".st-key-hero_cta{margin:0; max-width:220px;}"
+        ".st-key-closing_cta{margin-top:.8rem; max-width:220px;}"
         "</style>",
         unsafe_allow_html=True,
     )
-    st.button("Launch tool →", type="primary", key="hero_cta", on_click=_launch)
+    # The hero card is a real st.container so the button renders as an
+    # in-flow child right after the paragraph, inside the card. Splitting
+    # the background into its own absolutely-positioned layer (z-index:-1)
+    # instead of a min-height div means the container's height still hugs
+    # its actual content (text + button), rather than the earlier fixed
+    # 70vh box that left a dead gap before the button rendered outside it.
+    with st.container(key="hero_wrap"):
+        st.markdown(_flatten(landing_css + '<div class="dc-hero-bg"></div>'), unsafe_allow_html=True)
+        st.markdown(_flatten(hero_text_html), unsafe_allow_html=True)
+        st.button("Launch tool →", type="primary", key="hero_cta", on_click=_launch)
 
     # Self-contained fragment with its own background/text-color wrapper —
     # an unclosed <div> here can't inherit styling from hero_html's div,
