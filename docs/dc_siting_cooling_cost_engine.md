@@ -76,6 +76,68 @@ summer peak. Turning on **"Seasonal model"** instead blends a summer and a
 winter window's average power draw evenly across the year — a more honest
 estimate, at roughly double the live API calls.
 
+## A real API call
+
+One actual call this project made against the live FortyGuard API — the
+`exceedance` heatmap rung at 33°C for AWS's Northern Virginia site, over the
+July 2025 study window. The request is exactly what `pull_dry_bulb_bins` in
+`dc_siting/data.py` sends (the AOI is the site's real ~1km buffered
+footprint, built by `buffered_aoi()`); the response is the real payload
+FortyGuard returned, byte-for-byte from the cache file this project
+committed (`data/dc_siting_cache/5f70b1d188d04397.json`).
+
+Request — `client.create_heatmap(...)`:
+
+```python
+polygon_aoi = {
+    "type": "FeatureCollection",
+    "features": [{
+        "type": "Feature", "properties": {},
+        "geometry": {
+            "type": "Polygon",
+            "coordinates": [[
+                [-77.480204, 39.025951], [-77.469796, 39.025951],
+                [-77.469796, 39.034049], [-77.480204, 39.034049],
+                [-77.480204, 39.025951],
+            ]],
+        },
+    }],
+}
+
+response = client.create_heatmap(
+    polygon_aoi=polygon_aoi,
+    start_date="2025-07-01",
+    end_date="2025-07-31",
+    filter_type=4,          # range of days
+    granularity=100,
+    analytic_type="exceedance",
+    threshold=33.0,          # °C
+    direction="above",
+)
+```
+
+Response — `response["stats_data"]` (real, unedited):
+
+```json
+{
+  "activity_id": "721ffc06-45b9-4e1e-bed6-69bed105e95e",
+  "analytic_type": "exceedance",
+  "units": "hour",
+  "n_cells": 81,
+  "min": 85.0,
+  "max": 85.0,
+  "mean": 85.0
+}
+```
+
+Read literally: across the 81 tiles covering AWS's Northern Virginia
+footprint, every tile spent exactly 85 of July's 744 hours above 33°C dry
+bulb — the flat min/max/mean is expected here, since a ~1km AOI over one
+site is thermally uniform enough that tile-to-tile variance is negligible
+at this granularity. This one `mean` value becomes one rung of the
+site's exceedance ladder (`DRY_BULB_LADDER_C`), which `bins_from_exceedance_ladder()`
+turns into an hours-per-temperature-bin histogram for the cost model.
+
 ## Site sources
 
 - **Known real AI data centres** — 6 of the 36 sites named in FortyGuard's
@@ -93,10 +155,24 @@ estimate, at roughly double the live API calls.
 ## Getting started
 
 ```bash
+git clone https://github.com/olajuwon74/temperature-api-quickstart
+cd temperature-api-quickstart
+git checkout feat/dc-siting-cooling-cost-engine
+
+python -m venv venv
+source venv/bin/activate   # Windows: venv\Scripts\activate
+
 pip install -r requirements.txt
-cp .env.example .env   # add FORTYGUARD_API_KEY
-streamlit run app.py
+cp .env.example .env       # add your FORTYGUARD_API_KEY
+
+streamlit run app.py       # opens http://localhost:8501
 ```
+
+The 6 named DATS sites ship with pre-warmed cached API responses (see
+`data/dc_siting_cache/`), so the default comparison renders instantly on
+first run — a live key is only actually called if you add a new site
+(address or GeoJSON), pick a new study window, or tick the sidebar's
+"Force refresh (bypass cache, re-bill)" checkbox.
 
 Deployed on Streamlit Community Cloud from this branch — the
 `FORTYGUARD_API_KEY` secret has to be entered in **TOML** format there
