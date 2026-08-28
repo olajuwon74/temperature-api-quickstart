@@ -101,6 +101,7 @@ def load_demo_sites() -> list[dict]:
                 "name": props.get("name", "Unnamed site"),
                 "geometry": feat["geometry"],
                 "source": "DATS site (cached)",
+                "dats_score": props.get("dats_score"),
             }
         )
     return sites
@@ -636,6 +637,14 @@ with st.sidebar:
     )
     refresh = st.checkbox("Force refresh (bypass cache, re-bill)", value=False)
 
+    _live_sites = [s for s in sites if s.get("source") != "DATS site (cached)"]
+    if refresh or _live_sites:
+        st.caption(
+            f"{'Refreshing all' if refresh else f'{len(_live_sites)} new'} site(s) will call the live "
+            "API — each site is several sequential requests, so expect roughly 1–5 minutes per site "
+            "rather than an instant result. The DATS sites render from cache unless refresh is checked."
+        )
+
     run = st.button("Run comparison", type="primary", disabled=not sites or not chosen_archs)
 
 # ── main ─────────────────────────────────────────────────────────────────
@@ -653,19 +662,32 @@ if run:
         client, sites, start_date, end_date, it_load_kw, rate, chosen_archs, refresh, status_box,
         seasonal=seasonal, winter_start=winter_start, winter_end=winter_end,
     )
+    dats_scores = {s["id"]: s.get("dats_score") for s in sites}
+    df["dats_score"] = df["site_id"].map(dats_scores)
     status_box.update(label="Done.", state="complete", expanded=False)
-    st.session_state["results"] = (df, bin_data, wb_data)
+    st.session_state["results"] = (df, bin_data, wb_data, it_load_kw)
 
 if st.session_state["results"] is None:
     st.info("Configure your comparison in the sidebar, then click **Run comparison**.")
     st.stop()
 
-df, bin_data, wb_data = st.session_state["results"]
+orig_df, bin_data, wb_data, orig_it_load_kw = st.session_state["results"]
+orig_mw = orig_it_load_kw / 1000
 
-# Cost is kWh × rate, and kWh doesn't depend on rate — so re-ranking at a
-# different rate is pure local math on the results already pulled, no new
-# API calls. This lets the story go beyond one fixed number: does the
-# ranking hold at a different market's electricity price?
+# Cost is kWh × rate, and kWh is linear in IT load — neither depends on the
+# rate or the facility size once pulled, so re-ranking at a different rate
+# or a different facility size is pure local math on results already
+# pulled, no new API calls. Both sliders always start from the pristine
+# session-state df each rerun, so moving one doesn't compound with the other.
+slider_max_mw = max(50.0, orig_mw * 2)
+display_mw = st.slider(
+    "Explore a different facility size (MW)",
+    min_value=0.5,
+    max_value=slider_max_mw,
+    value=float(orig_mw),
+    step=0.5,
+    help="Cooling load scales linearly with IT load, so this rescales every cost instantly — no new API calls.",
+)
 display_rate = st.slider(
     "Explore a different electricity rate ($/kWh)",
     min_value=0.05,
@@ -674,12 +696,21 @@ display_rate = st.slider(
     step=0.01,
     help="Recomputes every cost instantly from the kWh figures already pulled — no new API calls.",
 )
+
+df = orig_df.copy()
+if display_mw != orig_mw:
+    df["annual_kwh"] = df["annual_kwh"] * (display_mw / orig_mw)
+df["annual_cost_usd"] = df["annual_kwh"] * display_rate
+
+changed_bits = []
+if display_mw != orig_mw:
+    changed_bits.append(f"{display_mw:.1f} MW (run at {orig_mw:.1f} MW)")
 if display_rate != rate:
-    df = df.copy()
-    df["annual_cost_usd"] = df["annual_kwh"] * display_rate
-    st.caption(f"Showing costs at ${display_rate:.2f}/kWh — live re-ranked, zero new API calls.")
+    changed_bits.append(f"${display_rate:.2f}/kWh (run at ${rate:.2f}/kWh)")
+if changed_bits:
+    st.caption("Showing costs at " + " and ".join(changed_bits) + " — live re-ranked, zero new API calls.")
 else:
-    st.caption(f"Showing costs at ${display_rate:.2f}/kWh, the rate set in the sidebar.")
+    st.caption(f"Showing costs at {orig_mw:.1f} MW and ${rate:.2f}/kWh, as set in the sidebar.")
 
 # Headline callout
 headline_df = df[df["architecture_key"] == headline_arch].sort_values("annual_cost_usd")
@@ -732,6 +763,39 @@ fig.update_layout(
 )
 st.plotly_chart(fig, use_container_width=True)
 
+# DATS score vs. actual cost — the thesis in one chart. FortyGuard's own
+# 0-100 thermal-exposure score ships with every known site but was never
+# plotted against a dollar figure anywhere, including in their own DATS
+# report. A flat/scattered relationship here is the visual proof that the
+# score alone doesn't tell you what a site actually costs to cool.
+score_df = df[(df["architecture_key"] == headline_arch) & df["dats_score"].notna()]
+if len(score_df) >= 2:
+    st.subheader("FortyGuard's DATS score vs. actual cooling cost")
+    corr = score_df["dats_score"].corr(score_df["annual_cost_usd"])
+    small_n_note = " (only a handful of points — read this directionally, not as a fitted trend)" if len(score_df) < 5 else ""
+    st.caption(
+        f"Pearson r = {corr:.2f} across the {len(score_df)} selected DATS sites{small_n_note} — "
+        f"{'a real relationship' if abs(corr) >= 0.5 else 'a weak-to-no relationship'}. "
+        "The DATS score alone doesn't reliably predict the dollar figure that determines site selection."
+    )
+    fig_score = px.scatter(
+        score_df,
+        x="dats_score",
+        y="annual_cost_usd",
+        text="site",
+        labels={"dats_score": "DATS thermal-exposure score (0–100)", "annual_cost_usd": "Annual cooling cost (USD)"},
+    )
+    fig_score.update_traces(marker=dict(size=12, color=SEQUENTIAL_BLUE), textposition="top center")
+    fig_score.update_layout(
+        plot_bgcolor="#fcfcfb",
+        paper_bgcolor="#fcfcfb",
+        font_color="#0b0b0b",
+        yaxis_tickprefix="$",
+        yaxis_gridcolor="#e1e0d9",
+        xaxis_gridcolor="#e1e0d9",
+    )
+    st.plotly_chart(fig_score, use_container_width=True)
+
 # Pairwise delta matrix — every site-pair's cost gap at the headline
 # architecture, not just the cheapest-vs-priciest extremes the headline
 # callout already surfaces. Diverging colorscale (two hues + a neutral
@@ -747,20 +811,32 @@ if len(pairwise_df) >= 2:
         index=site_order,
         columns=site_order,
     )
+    # Plotly's text_auto shrinks cell labels to fit — on a narrow (mobile)
+    # container that shrinks them to unreadable. A short signed-k format
+    # ("+145k") fits small cells at a legible size where "$144,900" can't;
+    # units are already established by the caption and colorbar title.
+    def _fmt_delta(v: float) -> str:
+        if v == 0:
+            return "0"
+        return f"{'+' if v > 0 else '−'}{abs(v) / 1000:,.0f}k"
+
+    text_matrix = matrix.apply(lambda col: col.map(_fmt_delta))
     fig_matrix = px.imshow(
         matrix,
-        text_auto="$,.0f",
         color_continuous_scale="RdBu_r",
         color_continuous_midpoint=0,
         aspect="auto",
         labels=dict(color="Δ annual cost (USD)"),
     )
+    fig_matrix.update_traces(text=text_matrix.values, texttemplate="%{text}", textfont_size=13)
     fig_matrix.update_layout(
         plot_bgcolor="#fcfcfb",
         paper_bgcolor="#fcfcfb",
         font_color="#0b0b0b",
         xaxis_title="",
         yaxis_title="",
+        coloraxis_colorbar=dict(thickness=14, len=0.8),
+        margin=dict(l=10, r=10, t=10, b=10),
     )
     st.plotly_chart(fig_matrix, use_container_width=True)
 
@@ -783,7 +859,7 @@ with exp_col2:
     methodology_notes = [(arch.label, arch.source) for arch in ARCHITECTURES.values()]
     st.download_button(
         "Download PDF report",
-        data=build_pdf_bytes(df, headline_text, facility_mw, display_rate, methodology_notes),
+        data=build_pdf_bytes(df, headline_text, display_mw, display_rate, methodology_notes),
         file_name="dc_cooling_cost_report.pdf",
         mime="application/pdf",
     )
