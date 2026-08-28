@@ -100,6 +100,7 @@ def load_demo_sites() -> list[dict]:
                 "id": props.get("parcel_id") or props.get("name") or "site",
                 "name": props.get("name", "Unnamed site"),
                 "geometry": feat["geometry"],
+                "source": "DATS site (cached)",
             }
         )
     return sites
@@ -115,6 +116,7 @@ def load_uploaded_sites(upload) -> list[dict]:
                 "id": props.get("parcel_id") or props.get("id") or f"site_{i}",
                 "name": props.get("name", f"Site {i + 1}"),
                 "geometry": feat["geometry"],
+                "source": "GeoJSON upload",
             }
         )
     return sites
@@ -547,6 +549,7 @@ with st.sidebar:
                         "id": f"manual-{len(st.session_state.manual_sites)}-{state_abbr}",
                         "name": name,
                         "geometry": point_footprint(lat, lon),
+                        "source": "Address (live geocoded)",
                     }
                 )
                 st.success(f'Added "{name}" at {lat:.4f}, {lon:.4f}')
@@ -659,6 +662,25 @@ if st.session_state["results"] is None:
 
 df, bin_data, wb_data = st.session_state["results"]
 
+# Cost is kWh × rate, and kWh doesn't depend on rate — so re-ranking at a
+# different rate is pure local math on the results already pulled, no new
+# API calls. This lets the story go beyond one fixed number: does the
+# ranking hold at a different market's electricity price?
+display_rate = st.slider(
+    "Explore a different electricity rate ($/kWh)",
+    min_value=0.05,
+    max_value=0.40,
+    value=float(rate),
+    step=0.01,
+    help="Recomputes every cost instantly from the kWh figures already pulled — no new API calls.",
+)
+if display_rate != rate:
+    df = df.copy()
+    df["annual_cost_usd"] = df["annual_kwh"] * display_rate
+    st.caption(f"Showing costs at ${display_rate:.2f}/kWh — live re-ranked, zero new API calls.")
+else:
+    st.caption(f"Showing costs at ${display_rate:.2f}/kWh, the rate set in the sidebar.")
+
 # Headline callout
 headline_df = df[df["architecture_key"] == headline_arch].sort_values("annual_cost_usd")
 headline_text = ""
@@ -710,6 +732,38 @@ fig.update_layout(
 )
 st.plotly_chart(fig, use_container_width=True)
 
+# Pairwise delta matrix — every site-pair's cost gap at the headline
+# architecture, not just the cheapest-vs-priciest extremes the headline
+# callout already surfaces. Diverging colorscale (two hues + a neutral
+# zero midpoint), one axis, direct $ labels on every cell.
+pairwise_df = df[df["architecture_key"] == headline_arch].sort_values("annual_cost_usd")
+if len(pairwise_df) >= 2:
+    st.subheader(f"Pairwise site comparison — {arch_labels[headline_arch]}")
+    st.caption("Row → column: how much more (+) or less (−) the column site costs to cool than the row site.")
+    site_order = pairwise_df["site"].tolist()
+    costs = pairwise_df.set_index("site")["annual_cost_usd"]
+    matrix = pd.DataFrame(
+        [[costs[col] - costs[row] for col in site_order] for row in site_order],
+        index=site_order,
+        columns=site_order,
+    )
+    fig_matrix = px.imshow(
+        matrix,
+        text_auto="$,.0f",
+        color_continuous_scale="RdBu_r",
+        color_continuous_midpoint=0,
+        aspect="auto",
+        labels=dict(color="Δ annual cost (USD)"),
+    )
+    fig_matrix.update_layout(
+        plot_bgcolor="#fcfcfb",
+        paper_bgcolor="#fcfcfb",
+        font_color="#0b0b0b",
+        xaxis_title="",
+        yaxis_title="",
+    )
+    st.plotly_chart(fig_matrix, use_container_width=True)
+
 # Ranked table
 st.subheader("Full comparison")
 table = df.pivot_table(index="site", columns="architecture", values="annual_cost_usd").reindex(
@@ -729,13 +783,18 @@ with exp_col2:
     methodology_notes = [(arch.label, arch.source) for arch in ARCHITECTURES.values()]
     st.download_button(
         "Download PDF report",
-        data=build_pdf_bytes(df, headline_text, facility_mw, rate, methodology_notes),
+        data=build_pdf_bytes(df, headline_text, facility_mw, display_rate, methodology_notes),
         file_name="dc_cooling_cost_report.pdf",
         mime="application/pdf",
     )
 
 # Site map
 st.subheader("Candidate sites")
+source_df = pd.DataFrame(
+    [{"Site": s["name"], "Source": s.get("source", "—")} for s in sites]
+)
+st.dataframe(source_df, use_container_width=True, hide_index=True)
+
 map_df = df[df["architecture_key"] == headline_arch][["site", "lat", "lon", "annual_cost_usd"]]
 if not map_df.empty:
     fig_map = go.Figure(
